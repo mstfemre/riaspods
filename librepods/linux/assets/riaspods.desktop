@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=RiasPods
+Comment=AirPods control with a glass interface
+Exec=riaspods
+Icon=riaspods
+Terminal=false
+Categories=Audio;AudioVideo;Utility;Qt;
