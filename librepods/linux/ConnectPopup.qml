@@ -26,7 +26,7 @@ Window {
         card.opacity = 1
         cardMove.y = 470
         visible = true
-        warm.ticks = 0
+        warm.frames = 0
         warm.total = 0
         warm.restart()
     }
@@ -35,16 +35,29 @@ Window {
         showcase.play()
         life.restart()
     }
+    // The card is already up (shown when the lid opened) and the connection just came:
+    // keep it for a full lifetime from now. Before begin() there is nothing to extend.
+    function extend() {
+        if (!warm.running) life.restart()
+    }
+    // Slide in once the 3D view is loaded and has been drawn twice (so the first frames of
+    // the slide are not the slow ones), at most ~1.5 s after present().
     Timer {
         id: warm
-        property int ticks: 0      // consecutive ticks with the 3D view ready
+        property int frames: 0     // frames drawn while the 3D view was ready
         property int total: 0
-        interval: 50
+        interval: 16
         repeat: true
         onTriggered: {
-            ticks = showcase.ready ? ticks + 1 : 0
-            if (ticks >= 4 || ++total > 30) { stop(); popup.begin() }
+            if (!showcase.ready) frames = 0
+            else if (frames < 2) popup.update()
+            if (frames >= 2 || ++total > 90) { stop(); popup.begin() }
         }
+    }
+    Connections {
+        target: popup
+        enabled: warm.running
+        function onFrameSwapped() { if (showcase.ready) warm.frames++ }
     }
 
     function dismiss() {
@@ -104,6 +117,17 @@ Window {
             font.letterSpacing: -0.4
         }
 
+        // shown while the card is up before the connection (it opens when the lid opens)
+        GlassText {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: title.y + title.height + 4
+            text: qsTr("Connecting…")
+            color: Theme.secondary
+            font.pixelSize: 14
+            opacity: airPodsTrayApp.airpodsConnected ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+        }
+
         // close button
         Rectangle {
             id: closeBtn
@@ -125,6 +149,8 @@ Window {
             height: implicitHeight
             info: popup.info
             active: popup.visible && !popup.leaving
+            // stays loaded between connections, so the card opens without a cold first frame
+            keepLoaded: true
         }
     }
 

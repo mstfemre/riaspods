@@ -1076,7 +1076,49 @@ private slots:
             auto decryptet = BLEUtils::decryptLastBytes(device.encryptedPayload, m_deviceInfo->magicAccEncKey());
             m_deviceInfo->getBattery()->parseEncryptedPacket(decryptet, device.primaryLeft, device.isThisPodInTheCase, isModelHeadset(m_deviceInfo->model()));
             m_deviceInfo->getEarDetection()->overrideEarDetectionStatus(device.isPrimaryInEar, device.isSecondaryInEar);
+            maybeAnnounceCaseOpened(device);
             maybeAutoConnect(device);
+        }
+    }
+
+    // A closed case is silent. The first advertisement after a few seconds of silence
+    // therefore means the lid was just opened: the connect card can be shown right away
+    // (as an iPhone does), about a second before the AirPods' own connection is up.
+    // A scan that has only just started has not heard the silence yet, so it does not count
+    // (that is the moment AirPods leave for the phone and keep advertising).
+    void maybeAnnounceCaseOpened(const BleInfo &device)
+    {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const qint64 scanStart = m_bleManager->scanStartedAt();
+        const bool afterSilence = scanStart > 0 && now - scanStart > 4000 && now - m_lastAdvertAt > 4000;
+        m_lastAdvertAt = now;
+        if (!afterSilence || areAirpodsConnected())
+        {
+            return;
+        }
+        using State = BleInfo::ConnectionState;
+        if (device.connectionState == State::MUSIC || device.connectionState == State::CALL ||
+            device.connectionState == State::RINGING || device.connectionState == State::HANGING_UP)
+        {
+            return; // in use on another device
+        }
+        LOG_INFO("AirPods are advertising again (case opened), showing the connect card");
+        emit caseOpened();
+
+        // AirPods that say they are connected to nothing can be called right away, about a
+        // second before the case's own "lid open" advertisement arrives. The hold timers
+        // keep maybeAutoConnect() from calling them a second time.
+        if (device.connectionState != State::DISCONNECTED || now < m_freeConnectHoldUntil ||
+            (socket && socket->isBusy()))
+        {
+            return;
+        }
+        m_autoConnectHoldUntil = now + 10000;
+        m_freeConnectHoldUntil = now + 10000;
+        m_autoConnectAttempts = 1;
+        if (monitor->connectAirPods(m_settings->value("DeviceInfo/address").toString()))
+        {
+            LOG_INFO("AirPods are free, connecting to them");
         }
     }
 
@@ -1242,6 +1284,8 @@ signals:
     void modelChanged();
     void primaryChanged();
     void airPodsStatusChanged();
+    // the case of our AirPods was opened while they are not connected to us
+    void caseOpened();
     void earDetectionBehaviorChanged(int behavior);
     void crossDeviceEnabledChanged(bool enabled);
     void notificationsEnabledChanged(bool enabled);
@@ -1272,6 +1316,7 @@ private:
     QBluetoothAddress m_socketAddress;
     bool m_lidOpen = false;
     qint64 m_lidSeenAt = 0;
+    qint64 m_lastAdvertAt = 0; // last advertisement of our AirPods
     qint64 m_autoConnectHoldUntil = 0;
     qint64 m_freeConnectHoldUntil = 0;
     int m_autoConnectAttempts = 0;

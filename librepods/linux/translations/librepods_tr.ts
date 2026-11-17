@@ -148,4 +148,11 @@
         <translation>AirPods&apos;unuzun bağlantısı kesildi</translation>
     </message>
 </context>
+<context>
+    <name>ConnectPopup</name>
+    <message>
+        <source>Connecting…</source>
+        <translation>Bağlanıyor…</translation>
+    </message>
+</context>
 </TS>

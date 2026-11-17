@@ -41,9 +41,16 @@ ApplicationWindow {
         if (!popupPending) return
         popupPending = false
         popupFallback.stop()
-        connectPopup.present()
-        mainWindow.replayRequested()
+        // the card may already be up since the lid opened; then it just stays a while longer
+        if (connectPopup.visible && !connectPopup.leaving) connectPopup.extend()
+        else connectPopup.present()
+        // a hidden window replays its intro when it is shown (onVisibleChanged)
+        if (mainWindow.visible) mainWindow.replayRequested()
     }
+    // Load the main window's 3D view a few seconds after startup, while the app sits in the
+    // tray, so opening the window never waits for it.
+    property bool preload3d: false
+    Timer { interval: 4000; running: true; onTriggered: mainWindow.preload3d = true }
     Timer { id: popupFallback; interval: 1200; onTriggered: mainWindow.showPopupNow() }
 
     Connections {
@@ -61,12 +68,20 @@ ApplicationWindow {
             }
             mainWindow.wasConnected = now
         }
+        // The lid was opened: show the card now, before the connection is up. If the
+        // AirPods do not connect, the card closes by itself after its lifetime.
+        function onCaseOpened() {
+            if (airPodsTrayApp.airpodsConnected || connectPopup.visible) return
+            mainWindow.popupPending = true
+            popupFallback.restart()
+            if (mainWindow.batteryKnown()) mainWindow.showPopupNow()
+        }
     }
     Connections {
         target: airPodsTrayApp.deviceInfo.battery
         function onBatteryStatusChanged() {
             const b = airPodsTrayApp.deviceInfo.battery
-            if (mainWindow.popupPending && airPodsTrayApp.airpodsConnected && mainWindow.batteryKnown())
+            if (mainWindow.popupPending && mainWindow.batteryKnown())
                 mainWindow.showPopupNow()
         }
     }
@@ -244,20 +259,29 @@ ApplicationWindow {
             function replay() {
                 introAnim.stop()
                 page.t = 0
-                warmMain.ticks = 0
+                warmMain.frames = 0
                 warmMain.guard = 0
                 warmMain.restart()
             }
+            // Start the intro as soon as the 3D view is loaded and the window has drawn it
+            // (two frames, so the first spin frame is not a slow one), instead of after a fixed
+            // wait. When the view is already loaded this takes a couple of vsyncs.
             Timer {
                 id: warmMain
-                property int ticks: 0
+                property int frames: 0   // frames drawn while the 3D view was ready
                 property int guard: 0
-                interval: 50
+                interval: 16
                 repeat: true
                 onTriggered: {
-                    ticks = showcase.ready ? ticks + 1 : 0
-                    if (ticks >= 3 || ++guard > 30) { stop(); introAnim.restart(); showcase.play() }
+                    if (!showcase.ready) frames = 0
+                    else if (frames < 2) mainWindow.update()
+                    if (frames >= 2 || ++guard > 90) { stop(); introAnim.restart(); showcase.play() }
                 }
+            }
+            Connections {
+                target: mainWindow
+                enabled: warmMain.running
+                function onFrameSwapped() { if (showcase.ready) warmMain.frames++ }
             }
             NumberAnimation { id: introAnim; target: page; property: "t"; from: 0; to: 1.8; duration: 1300 }
             Connections {
@@ -323,7 +347,7 @@ ApplicationWindow {
                 info: airPodsTrayApp.deviceInfo
                 active: mainWindow.visible && stackView.depth === 1
                 turns: 1
-                lingerMs: 60000
+                keepLoaded: mainWindow.preload3d
                 // never fully 0: an invisible item is not drawn, and the 3D view must warm up
                 opacity: Math.max(0.004, page.sec(0.1) * (airPodsTrayApp.airpodsConnected ? 1 : 0.45))
                 Behavior on opacity { NumberAnimation { duration: 300 } }

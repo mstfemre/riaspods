@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick3D
+import QtQuick.Window
 
 // Real-time 3D turntable of the AirPods Pro 3: buds on the left, case on the right.
 // One View3D, one render pass; mesh data is shared between the two model instances.
@@ -41,24 +42,48 @@ View3D {
         spin()
     }
     function spin() {
-        if (turns < 0 || turnAnim.running) return
-        turnAnim.restart()
+        if (turns < 0 || spinning) return
+        spinStart = Date.now()
+        spinning = true
     }
 
     NumberAnimation { id: introAnim; target: root; property: "intro"; from: 0; to: 1; duration: 900; easing.type: Easing.OutBack; easing.overshoot: 1.2 }
-    NumberAnimation {
-        target: root; property: "yaw"
-        from: 0; to: 360
-        duration: 9000
-        loops: Animation.Infinite
-        running: root.turns < 0 && root.visible
+
+    // The spin is stepped by a timer at about 60 fps instead of a NumberAnimation: an
+    // animation changes the scene on every vsync, which redraws the 3D view 240 times a
+    // second on a 240 Hz monitor. The angle comes from the clock, so the speed is exact.
+    property bool spinning: false
+    property double spinStart: 0
+    // the view may stay loaded in a hidden window, so the endless spin also needs it shown
+    readonly property bool endless: turns < 0 && visible && Window.visibility !== Window.Hidden
+    onEndlessChanged: if (endless) spinStart = Date.now()
+    // Spin curve: speed ramps up over the first 8% (~0.4 s) and then eases out to rest, so
+    // the model visibly starts turning at once (an InOutSine crawls for the first second).
+    function ease(t) {
+        const r = 0.08
+        const vmax = 1 / (r / 2 + 2 * (1 - r) / Math.PI)   // makes ease(1) == 1
+        if (t < r) return vmax * t * t / (2 * r)
+        return vmax * (r / 2 + 2 * (1 - r) / Math.PI * Math.sin(Math.PI / 2 * (t - r) / (1 - r)))
     }
-    NumberAnimation {
-        id: turnAnim
-        target: root; property: "yaw"
-        from: 0; to: 360 * Math.max(1, root.turns)
-        duration: 5200 * Math.max(1, root.turns)
-        easing.type: Easing.InOutSine
+    readonly property real frameMs: {
+        const hz = Screen.refreshRate > 0 ? Screen.refreshRate : 60
+        return 1000 / hz * Math.max(1, Math.round(hz / 60))   // a whole number of vsyncs
+    }
+    Timer {
+        interval: Math.max(1, Math.floor(root.frameMs))
+        repeat: true
+        running: root.endless || root.spinning
+        onTriggered: {
+            const ms = Date.now() - root.spinStart
+            if (root.endless) {
+                root.yaw = (ms / 9000 * 360) % 360
+                return
+            }
+            const n = Math.max(1, root.turns)
+            const t = Math.min(1, ms / (5200 * n))
+            root.yaw = 360 * n * root.ease(t)
+            if (t >= 1) root.spinning = false
+        }
     }
 
     environment: SceneEnvironment {

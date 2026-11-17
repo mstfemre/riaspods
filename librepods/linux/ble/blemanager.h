@@ -73,6 +73,8 @@ public:
     void startScan();
     void stopScan();
     bool isScanning() const;
+    // when the current scan was started (ms since epoch), 0 while not scanning
+    qint64 scanStartedAt() const { return m_wantScan ? m_scanStartedAt : 0; }
 
 private slots:
     void onDeviceDiscovered(const QBluetoothDeviceInfo &info);
@@ -90,6 +92,7 @@ private:
     bool m_wantScan = false;
     bool m_restartPending = false;
     qint64 m_lastReport = 0;
+    qint64 m_scanStartedAt = 0;
 };
 
 #endif // BLEMANAGER_H

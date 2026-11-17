@@ -14,6 +14,9 @@ Item {
     Component.onCompleted: completed = true
     onActiveChanged: if (completed && !active && lingerMs > 0) linger.restart(); else linger.stop()
     Timer { id: linger; interval: Math.max(1, root.lingerMs) }
+    // keep the 3D view loaded even while off screen (a hidden window draws nothing, so this
+    // only costs memory); creating it blocks the UI for about half a second
+    property bool keepLoaded: false
     property int turns: -1        // -1: keep spinning, n: n turns then rest (hover spins again)
 
     readonly property bool demo: Qt.application.arguments.indexOf("--showcase-test") >= 0
@@ -61,10 +64,10 @@ Item {
     NumberAnimation { id: ringAnim; target: root; property: "revealT"; from: 0; to: 1; duration: 1100; easing.type: Easing.OutCubic }
     Timer { interval: 30000; running: true; repeat: true; onTriggered: root.nowSecs = Date.now() / 1000 }
 
-    // ---- 3D turntable (only exists while it is on screen)
+    // ---- 3D turntable (exists while on screen, or always with keepLoaded)
     Loader {
         id: view3d
-        active: root.sprites && (root.active || linger.running) && (root.budsShown || root.caseShown)
+        active: root.sprites && (root.active || root.keepLoaded || linger.running) && (root.budsShown || root.caseShown)
         x: 0; y: 0
         width: root.width
         height: root.stageH

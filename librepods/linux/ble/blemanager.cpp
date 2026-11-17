@@ -140,6 +140,7 @@ void BleManager::startScan()
     LOG_DEBUG("Starting BLE scan...");
     m_wantScan = true;
     m_lastReport = QDateTime::currentMSecsSinceEpoch();
+    m_scanStartedAt = m_lastReport;
     discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
 }
 
