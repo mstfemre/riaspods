@@ -11,6 +11,7 @@
 #include <QRegularExpression>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
+#include <QDBusMessage>
 
 MediaController::MediaController(QObject *parent) : QObject(parent) {
   m_pulseAudio = new PulseAudioController(this);
@@ -18,6 +19,14 @@ MediaController::MediaController(QObject *parent) : QObject(parent) {
   {
     LOG_ERROR("Failed to initialize PulseAudio controller");
   }
+
+  // The ear sensors flicker while a bud is being put in. Switching the card off and on
+  // within a second or two kills the A2DP stream as it starts, and WirePlumber then drops
+  // the whole card, so "out of ear" only switches audio off once it has lasted a while.
+  m_offTimer = new QTimer(this);
+  m_offTimer->setSingleShot(true);
+  m_offTimer->setInterval(4000);
+  connect(m_offTimer, &QTimer::timeout, this, &MediaController::switchAudioOff);
 }
 
 void MediaController::handleEarDetection(EarDetection *earDetection)
@@ -173,8 +182,10 @@ QString MediaController::getPreferredA2dpProfile() {
 }
 
 void MediaController::activateA2dpProfile() {
+  m_offTimer->stop();
   m_wantA2dp = true;
   m_a2dpRetries = 0;
+  m_a2dpReconnectTried = false;
   tryActivateA2dp();
 }
 
@@ -192,6 +203,13 @@ void MediaController::tryActivateA2dp() {
     // of every application and froze the window for seconds.)
     if (m_a2dpRetries < 8) {
       ++m_a2dpRetries;
+      QTimer::singleShot(1500, this, &MediaController::tryActivateA2dp);
+    } else if (!m_a2dpReconnectTried) {
+      // The Bluetooth link is up but the audio card is gone: the A2DP stream failed and
+      // nothing brings it back on its own. Ask BlueZ to connect the profile again.
+      m_a2dpReconnectTried = true;
+      m_a2dpRetries = 0;
+      reconnectA2dp();
       QTimer::singleShot(1500, this, &MediaController::tryActivateA2dp);
     } else {
       LOG_WARN("A2DP profile did not become available for the AirPods");
@@ -213,9 +231,25 @@ void MediaController::tryActivateA2dp() {
   }
 }
 
+void MediaController::reconnectA2dp() {
+  if (connectedDeviceMacAddress.isEmpty()) {
+    return;
+  }
+  QString path = "/org/bluez/hci0/dev_" + connectedDeviceMacAddress.toUpper();
+  path.replace(':', '_');
+  LOG_INFO("A2DP audio missing, asking BlueZ to reconnect it");
+  QDBusMessage msg = QDBusMessage::createMethodCall("org.bluez", path, "org.bluez.Device1", "ConnectProfile");
+  msg << QStringLiteral("0000110b-0000-1000-8000-00805f9b34fb"); // A2DP sink
+  QDBusConnection::systemBus().asyncCall(msg, 20000);
+}
+
 void MediaController::removeAudioOutputDevice() {
   m_wantA2dp = false;
-  if (connectedDeviceMacAddress.isEmpty()) {
+  m_offTimer->start();
+}
+
+void MediaController::switchAudioOff() {
+  if (m_wantA2dp || connectedDeviceMacAddress.isEmpty()) {
     return;
   }
   m_deviceOutputName = m_pulseAudio->getCardNameForDevice(connectedDeviceMacAddress);
@@ -244,6 +278,8 @@ void MediaController::clearConnectedDevice() {
   m_deviceOutputName.clear();
   m_wantA2dp = false;
   m_a2dpRetries = 0;
+  m_a2dpReconnectTried = false;
+  m_offTimer->stop();
   m_lastInEarCount = -1;
   initialVolume = -1;
 }
