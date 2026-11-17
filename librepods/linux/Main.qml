@@ -203,6 +203,34 @@ ApplicationWindow {
         }
     }
 
+    // ---------- window controls ----------
+    // The window has no titlebar of its own (Hyprland's hyprbars is turned off for it in
+    // ~/.config/hypr/rules.lua), so the top strip moves the window and carries the
+    // macOS-style lights.
+    Item {
+        id: titleStrip
+        z: 10
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 30
+
+        DragHandler {
+            target: null
+            onActiveChanged: if (active) mainWindow.startSystemMove()
+        }
+
+        TrafficLights {
+            x: 14
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: 2
+            active: mainWindow.active
+            onCloseClicked: mainWindow.visible = false
+            // A tray app: "minimize" puts it back in the tray, like closing.
+            onMinimizeClicked: mainWindow.visible = false
+        }
+    }
+
     // ---------- main page ----------
     Component {
         id: mainPage
@@ -241,9 +269,9 @@ ApplicationWindow {
             // header
             Item {
                 id: header
-                x: 26; y: 26
+                x: 26; y: 34
                 width: parent.width - 52
-                height: 56
+                height: 54
                 opacity: page.sec(0.0)
                 transform: Translate { y: (1 - page.sec(0.0)) * 18 }
 
@@ -410,7 +438,7 @@ ApplicationWindow {
 
             Item {
                 id: sHeader
-                x: 26; y: 26
+                x: 26; y: 34
                 width: parent.width - 52
                 height: 44
                 GlassButton {

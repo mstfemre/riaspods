@@ -66,6 +66,7 @@ qt_add_qml_module(librepods
         SegmentedControl.qml
         Icon.qml
         KeysQRDialog.qml
+        TrafficLights.qml
     RESOURCES
         maps/studio.png
         maps/textureData.png
