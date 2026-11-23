@@ -625,12 +625,8 @@ private slots:
             }
             QString formattedAddress = address;
             mediaController->setConnectedDeviceMacAddress(formattedAddress.replace(":", "_"));
-            const bool earStateKnown = areAirpodsConnected()
-                && mediaController->getEarDetectionBehavior() != MediaController::EarDetectionBehavior::Disabled;
-            if (!earStateKnown || m_deviceInfo->getEarDetection()->oneOrMorePodsInEar())
-            {
-                mediaController->activateA2dpProfile();
-            }
+            // Worn or not, the AirPods belong in the output list while they are connected.
+            mediaController->activateA2dpProfile();
         });
     }
 
@@ -932,10 +928,7 @@ private slots:
             m_settings->setValue("DeviceInfo/address", m_deviceInfo->bluetoothAddress());
             initiateMagicPairing();
             mediaController->setConnectedDeviceMacAddress(m_deviceInfo->bluetoothAddress().replace(":", "_"));
-            if (m_deviceInfo->getEarDetection()->oneOrMorePodsInEar()) // AirPods get added as output device only after this
-            {
-                mediaController->activateA2dpProfile();
-            }
+            mediaController->activateA2dpProfile(); // worn or not, keep them in the output list
             m_bleManager->stopScan();
             emit airPodsStatusChanged();
         }

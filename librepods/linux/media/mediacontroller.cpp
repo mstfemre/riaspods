@@ -20,13 +20,12 @@ MediaController::MediaController(QObject *parent) : QObject(parent) {
     LOG_ERROR("Failed to initialize PulseAudio controller");
   }
 
-  // The ear sensors flicker while a bud is being put in. Switching the card off and on
-  // within a second or two kills the A2DP stream as it starts, and WirePlumber then drops
-  // the whole card, so "out of ear" only switches audio off once it has lasted a while.
-  m_offTimer = new QTimer(this);
-  m_offTimer->setSingleShot(true);
-  m_offTimer->setInterval(4000);
-  connect(m_offTimer, &QTimer::timeout, this, &MediaController::switchAudioOff);
+  // One timer for the A2DP retries, so activating again while a retry is pending
+  // restarts that retry instead of starting a second chain beside it.
+  m_retryTimer = new QTimer(this);
+  m_retryTimer->setSingleShot(true);
+  m_retryTimer->setInterval(1500);
+  connect(m_retryTimer, &QTimer::timeout, this, &MediaController::tryActivateA2dp);
 }
 
 void MediaController::handleEarDetection(EarDetection *earDetection)
@@ -81,10 +80,11 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
       });
     }
   }
-  else
+  else if (before != 0)
   {
-    if (before != 0) LOG_INFO("Both AirPods are out of ear");
-    removeAudioOutputDevice();
+    // The audio card stays on: switching it to "off" here took the AirPods out of the
+    // system's output list whenever they were not worn (case open, on the desk).
+    LOG_INFO("Both AirPods are out of ear");
   }
 }
 
@@ -182,7 +182,7 @@ QString MediaController::getPreferredA2dpProfile() {
 }
 
 void MediaController::activateA2dpProfile() {
-  m_offTimer->stop();
+  m_retryTimer->stop();
   m_wantA2dp = true;
   m_a2dpRetries = 0;
   m_a2dpReconnectTried = false;
@@ -203,14 +203,14 @@ void MediaController::tryActivateA2dp() {
     // of every application and froze the window for seconds.)
     if (m_a2dpRetries < 8) {
       ++m_a2dpRetries;
-      QTimer::singleShot(1500, this, &MediaController::tryActivateA2dp);
+      m_retryTimer->start();
     } else if (!m_a2dpReconnectTried) {
       // The Bluetooth link is up but the audio card is gone: the A2DP stream failed and
       // nothing brings it back on its own. Ask BlueZ to connect the profile again.
       m_a2dpReconnectTried = true;
       m_a2dpRetries = 0;
       reconnectA2dp();
-      QTimer::singleShot(1500, this, &MediaController::tryActivateA2dp);
+      m_retryTimer->start();
     } else {
       LOG_WARN("A2DP profile did not become available for the AirPods");
     }
@@ -243,30 +243,6 @@ void MediaController::reconnectA2dp() {
   QDBusConnection::systemBus().asyncCall(msg, 20000);
 }
 
-void MediaController::removeAudioOutputDevice() {
-  m_wantA2dp = false;
-  m_offTimer->start();
-}
-
-void MediaController::switchAudioOff() {
-  if (m_wantA2dp || connectedDeviceMacAddress.isEmpty()) {
-    return;
-  }
-  m_deviceOutputName = m_pulseAudio->getCardNameForDevice(connectedDeviceMacAddress);
-  if (m_deviceOutputName.isEmpty()) {
-    return;
-  }
-  const QString active = m_pulseAudio->getActiveProfile(m_deviceOutputName);
-  if (active.isEmpty() || active == "off") {
-    return;
-  }
-
-  LOG_INFO("Removing AirPods as audio output device");
-  if (!m_pulseAudio->setCardProfile(m_deviceOutputName, "off")) {
-    LOG_ERROR("Failed to remove AirPods as audio output device");
-  }
-}
-
 void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
   m_deviceOutputName = m_pulseAudio->getCardNameForDevice(connectedDeviceMacAddress);
@@ -279,7 +255,7 @@ void MediaController::clearConnectedDevice() {
   m_wantA2dp = false;
   m_a2dpRetries = 0;
   m_a2dpReconnectTried = false;
-  m_offTimer->stop();
+  m_retryTimer->stop();
   m_lastInEarCount = -1;
   initialVolume = -1;
 }

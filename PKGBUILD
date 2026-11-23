@@ -2,7 +2,7 @@
 # RiasPods: AirPods control for Linux with a liquid-glass UI, a live 3D model and an
 # iPhone-like connect card. Based on LibrePods (GPL-3.0) by Kavish Devar.
 pkgname=riaspods
-pkgver=1.0.6
+pkgver=1.0.7
 pkgrel=1
 pkgdesc="AirPods control with a liquid glass UI and connect animation (based on LibrePods)"
 arch=('x86_64')

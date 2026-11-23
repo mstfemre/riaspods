@@ -37,7 +37,6 @@ public:
   bool isActiveOutputDeviceAirPods();
   void handleConversationalAwareness(const QByteArray &data);
   void activateA2dpProfile();
-  void removeAudioOutputDevice();
   void setConnectedDeviceMacAddress(const QString &macAddress);
   bool isA2dpProfileAvailable();
   QString getPreferredA2dpProfile();
@@ -56,7 +55,6 @@ Q_SIGNALS:
 private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output) const;
   void tryActivateA2dp();
-  void switchAudioOff();
   void reconnectA2dp();
   QStringList getPlayingMediaPlayers();
 
@@ -70,7 +68,7 @@ private:
   bool m_wantA2dp = false;
   int m_a2dpRetries = 0;
   bool m_a2dpReconnectTried = false;
-  QTimer *m_offTimer = nullptr;
+  QTimer *m_retryTimer = nullptr;
   int m_lastInEarCount = -1; // -1: not known yet
 };
 
